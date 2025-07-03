@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { Upload, Users, Calculator, Share2, Plus, X } from "lucide-react"
+import { Users, Calculator, Share2, Plus, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -10,32 +10,9 @@ import { Slider } from "@/components/ui/slider"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
-
-interface ReceiptItem {
-  id: string
-  name: string
-  price: number
-  assignments: { [personName: string]: number } // percentage (0-100)
-}
-
-interface Person {
-  name: string
-}
-
-// Sample receipt data
-const SAMPLE_RECEIPT = {
-  items: [
-    { id: "1", name: "Spinach Artichoke Dip", price: 12.99, assignments: {} },
-    { id: "2", name: "Chicken Caesar Salad", price: 14.99, assignments: {} },
-    { id: "3", name: "Margherita Pizza", price: 18.5, assignments: {} },
-    { id: "4", name: "Grilled Salmon", price: 24.99, assignments: {} },
-    { id: "5", name: "Coca Cola", price: 3.99, assignments: {} },
-    { id: "6", name: "Craft Beer", price: 6.5, assignments: {} },
-  ],
-  subtotal: 81.96,
-  tax: 6.97, // 8.5%
-  total: 88.93,
-}
+import { OCRUpload } from "@/components/ocr-upload"
+import type { ReceiptItem, Person } from "@/types/receipt"
+import { SAMPLE_RECEIPT } from "@/types/receipt"
 
 export default function BillSplitter() {
   const [currentStep, setCurrentStep] = useState(1)
@@ -43,11 +20,6 @@ export default function BillSplitter() {
   const [items, setItems] = useState<ReceiptItem[]>([])
   const [people, setPeople] = useState<Person[]>([])
   const [newPersonName, setNewPersonName] = useState("")
-
-  const [selectedFile, setSelectedFile] = useState<File | null>(null)
-  const [isProcessing, setIsProcessing] = useState(false)
-  const [ocrText, setOcrText] = useState("")
-  const [processingError, setProcessingError] = useState("")
 
   const [newItemName, setNewItemName] = useState("")
   const [newItemPrice, setNewItemPrice] = useState("")
@@ -58,152 +30,15 @@ export default function BillSplitter() {
   const [tipDistribution, setTipDistribution] = useState("proportional")
   const [taxDistribution, setTaxDistribution] = useState("proportional")
 
-  const handleFileUpload = async (file: File) => {
-    setSelectedFile(file)
-    setIsProcessing(true)
-    setProcessingError("")
-
-    try {
-      // Dynamic import of Tesseract.js
-      const Tesseract = await import("tesseract.js")
-
-      // Process the image with Tesseract OCR
-      const {
-        data: { text },
-      } = await Tesseract.recognize(file, "eng", {
-        logger: (m) => {
-          // Optional: show progress
-          if (m.status === "recognizing text") {
-            console.log(`OCR Progress: ${Math.round(m.progress * 100)}%`)
-          }
-        },
-      })
-
-      setOcrText(text)
-
-      // Parse the extracted text
-      const parsedItems = parseReceiptText(text)
-
-      if (parsedItems.length > 0) {
-        setItems(parsedItems)
-        setReceiptUploaded(true)
-        setCurrentStep(2)
-      } else {
-        // If no items found, show error and allow manual entry
-        setProcessingError("Could not extract items from receipt. Please add items manually or try a different image.")
-        setItems([])
-        setReceiptUploaded(true)
-        setCurrentStep(2)
-      }
-    } catch (error) {
-      console.error("OCR Error:", error)
-      setProcessingError("Failed to process receipt. Please try again or add items manually.")
-      setItems([])
-      setReceiptUploaded(true)
-      setCurrentStep(2)
-    } finally {
-      setIsProcessing(false)
-    }
+  const handleItemsExtracted = (extractedItems: ReceiptItem[]) => {
+    setItems(extractedItems)
+    setReceiptUploaded(true)
+    setCurrentStep(2)
   }
 
-  const parseReceiptText = (text: string): ReceiptItem[] => {
-    const lines = text.split(/[\n\r]+/).filter((line) => line.trim())
-    const items: ReceiptItem[] = []
-
-    // Enhanced patterns for menu items with prices
-    const itemPatterns = [
-      /^(.+?)\s+\$(\d+\.?\d*)$/, // "Item Name $12.99"
-      /^(.+?)\s+(\d+\.\d{2})$/, // "Item Name 12.99"
-      /^(.+?)\s*\$(\d+\.?\d*)$/, // "Item Name$12.99"
-      /^(.+?)\s+USD\s*(\d+\.?\d*)$/i, // "Item Name USD 12.99"
-      /^(.+?)\s*:\s*\$?(\d+\.?\d*)$/, // "Item Name: $12.99"
-      /^(.+?)\s+@\s*\$?(\d+\.?\d*)$/, // "Item Name @ $12.99"
-    ]
-
-    // Enhanced skip words
-    const skipWords = [
-      "total",
-      "subtotal",
-      "tax",
-      "tip",
-      "gratuity",
-      "service",
-      "charge",
-      "fee",
-      "discount",
-      "receipt",
-      "thank",
-      "visit",
-      "server",
-      "table",
-      "check",
-      "bill",
-      "payment",
-      "cash",
-      "card",
-      "change",
-      "balance",
-      "amount",
-      "due",
-      "tender",
-      "restaurant",
-      "cafe",
-      "diner",
-      "bar",
-      "grill",
-      "kitchen",
-      "menu",
-      "order",
-      "date",
-      "time",
-      "guest",
-      "party",
-      "seat",
-      "transaction",
-      "invoice",
-    ]
-
-    lines.forEach((line, index) => {
-      const cleanLine = line.trim().toLowerCase()
-
-      // Skip very short lines or lines with common non-item text
-      if (cleanLine.length < 3 || skipWords.some((word) => cleanLine.includes(word))) {
-        return
-      }
-
-      // Skip lines that are mostly numbers or special characters
-      if (/^[\d\s.$\-+=*/\\]+$/.test(cleanLine)) {
-        return
-      }
-
-      // Try each pattern
-      for (const pattern of itemPatterns) {
-        const match = line.trim().match(pattern)
-        if (match) {
-          const name = match[1].trim()
-          const price = Number.parseFloat(match[2])
-
-          // Enhanced validation
-          if (
-            name.length >= 3 &&
-            name.length <= 50 &&
-            price > 0.5 &&
-            price < 500 &&
-            !skipWords.some((word) => name.toLowerCase().includes(word))
-          ) {
-            items.push({
-              id: `item-${Date.now()}-${index}`,
-              name: name,
-              price: price,
-              assignments: {},
-            })
-            break
-          }
-        }
-      }
-    })
-
-    return items
+  const handleOCRError = (error: string) => {
+    console.error("OCR Error:", error)
+    // You could show a toast notification here
   }
 
   const addPerson = () => {
@@ -364,75 +199,10 @@ export default function BillSplitter() {
 
         {/* Step 1: Receipt Upload */}
         {currentStep === 1 && (
-          <Card className="border-2 border-purple-200 shadow-xl">
-            <CardHeader className="bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-t-lg">
-              <CardTitle className="flex items-center gap-2">
-                <Upload className="w-5 h-5" />📸 Upload Receipt
-              </CardTitle>
-              <CardDescription className="text-purple-100">Take a photo of your restaurant receipt</CardDescription>
-            </CardHeader>
-            <CardContent className="p-6">
-              <div
-                className="border-3 border-dashed border-purple-300 rounded-xl p-8 text-center hover:border-pink-400 hover:bg-pink-50 transition-all duration-300 bg-gradient-to-br from-purple-50 to-pink-50"
-                onDragOver={(e) => {
-                  e.preventDefault()
-                  e.currentTarget.classList.add("border-pink-400", "bg-pink-100")
-                }}
-                onDragLeave={(e) => {
-                  e.preventDefault()
-                  e.currentTarget.classList.remove("border-pink-400", "bg-pink-100")
-                }}
-                onDrop={(e) => {
-                  e.preventDefault()
-                  e.currentTarget.classList.remove("border-pink-400", "bg-pink-100")
-                  const files = Array.from(e.dataTransfer.files)
-                  if (files.length > 0 && files[0].type.startsWith("image/")) {
-                    handleFileUpload(files[0])
-                  }
-                }}
-              >
-                {isProcessing ? (
-                  <div className="space-y-4">
-                    <div className="w-16 h-16 mx-auto border-4 border-purple-500 border-t-transparent rounded-full animate-spin"></div>
-                    <p className="text-purple-700 font-medium">🤖 Processing receipt with AI magic...</p>
-                    <p className="text-sm text-purple-600">This may take 10-30 seconds ⏰</p>
-                  </div>
-                ) : selectedFile ? (
-                  <div className="space-y-4">
-                    <div className="w-16 h-16 mx-auto bg-gradient-to-r from-green-400 to-emerald-500 rounded-full flex items-center justify-center shadow-lg">
-                      <span className="text-2xl">✅</span>
-                    </div>
-                    <p className="text-green-700 font-medium">🎉 Receipt processed successfully!</p>
-                    <p className="text-sm text-gray-600">{selectedFile.name}</p>
-                    {processingError && <p className="text-sm text-red-600">{processingError}</p>}
-                  </div>
-                ) : (
-                  <>
-                    <div className="text-6xl mb-4">📱</div>
-                    <p className="text-gray-700 mb-4 font-medium">Click to upload or drag and drop your receipt</p>
-                    <input
-                      type="file"
-                      accept="image/*"
-                      onChange={(e) => {
-                        if (e.target.files && e.target.files[0]) {
-                          handleFileUpload(e.target.files[0])
-                        }
-                      }}
-                      className="hidden"
-                      id="receipt-upload"
-                    />
-                    <Button
-                      onClick={() => document.getElementById("receipt-upload")?.click()}
-                      disabled={isProcessing}
-                      className="bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white font-medium px-6 py-3 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300"
-                    >
-                      📸 Upload Receipt
-                    </Button>
-                  </>
-                )}
-              </div>
-            </CardContent>
-          </Card>
+          <OCRUpload 
+            onItemsExtracted={handleItemsExtracted}
+            onError={handleOCRError}
+          />
         )}
 
         {/* Step 2: Add People */}
@@ -478,7 +248,7 @@ export default function BillSplitter() {
                 ))}
               </div>
 
-              {processingError && (
+              {items.length === 0 && (
                 <div className="space-y-4 p-4 bg-gradient-to-r from-yellow-50 to-orange-50 rounded-xl border-2 border-yellow-200">
                   <h3 className="font-medium text-yellow-800">⚠️ Add Items Manually</h3>
                   <div className="flex gap-2">

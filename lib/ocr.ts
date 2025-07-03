@@ -84,24 +84,26 @@ export const parseReceiptText = (text: string): ReceiptItem[] => {
     { pattern: /^(.+?)\s+\$(\d+\.?\d*)$/, name: 'Standard with $' },
     { pattern: /^(.+?)\s+(\d+\.\d{2})$/, name: 'Standard decimal' },
     { pattern: /^(.+?)\s*\$(\d+\.?\d*)$/, name: 'No space with $' },
-    
+    // Comma as decimal separator
+    { pattern: /^(.+?)\s+(\d+,\d{2})$/, name: 'Standard decimal with comma' },
+    { pattern: /^(.+?)\s*\$(\d+,\d{2})$/, name: 'Dollar with comma' },
     // Enhanced patterns for various receipt formats
     { pattern: /^(.+?)\s+USD\s*(\d+\.?\d*)$/i, name: 'USD currency' },
     { pattern: /^(.+?)\s*:\s*\$?(\d+\.?\d*)$/, name: 'Colon separator' },
     { pattern: /^(.+?)\s+@\s*\$?(\d+\.?\d*)$/, name: 'At symbol' },
-    
     // New patterns for better coverage
     { pattern: /^(.+?)\s+(\d+\.\d{2})\s*$/, name: 'Trailing space' },
     { pattern: /^(.+?)\s*\$(\d+\.\d{2})\s*$/, name: 'Dollar with cents' },
     { pattern: /^(.+?)\s*(\d+\.\d{2})\s*USD$/i, name: 'USD suffix' },
     { pattern: /^(.+?)\s*(\d+\.\d{2})\s*\$?$/, name: 'Optional dollar' },
-    
     // Handle quantities and prices
     { pattern: /^(\d+)\s+(.+?)\s+\$(\d+\.?\d*)$/, name: 'Quantity prefix' },
     { pattern: /^(.+?)\s+(\d+)\s+\$(\d+\.?\d*)$/, name: 'Quantity suffix' },
-    
     // Handle tax-inclusive prices
     { pattern: /^(.+?)\s+\$(\d+\.?\d*)\s*\(incl\.\s*tax\)$/i, name: 'Tax inclusive' },
+    // Comma with quantity
+    { pattern: /^(\d+)\s+(.+?)\s+(\d+,\d{2})$/, name: 'Quantity prefix with comma' },
+    { pattern: /^(.+?)\s+(\d+)\s+(\d+,\d{2})$/, name: 'Quantity suffix with comma' },
   ]
   
   // Enhanced skip patterns with regex
@@ -126,7 +128,7 @@ export const parseReceiptText = (text: string): ReceiptItem[] => {
   const isValidPrice = (price: number): boolean => {
     return price >= 0.01 && price <= 1000 && 
            Number.isFinite(price) && 
-           price.toString().match(/^\d+\.?\d{0,2}$/)
+           /^\d+\.?\d{0,2}$/.test(price.toString())
   }
   
   // Name validation function
@@ -151,16 +153,24 @@ export const parseReceiptText = (text: string): ReceiptItem[] => {
     // Try each pattern
     for (const { pattern, name } of itemPatterns) {
       const match = trimmedLine.match(pattern)
-      if (match) {
+      if (match !== null) {
         let name = match[1]?.trim()
-        let price = Number.parseFloat(match[2] || match[3])
+        let priceStr = match[2] || match[3]
+        if (typeof priceStr === 'string' && priceStr.includes(',')) {
+          priceStr = priceStr.replace(',', '.')
+        }
+        let price = Number.parseFloat(priceStr)
         
         // Handle quantity patterns
         if (match[1] && match[2] && match[3]) {
           const quantity = Number.parseInt(match[1])
           if (quantity > 0 && quantity <= 99) {
             name = match[2].trim()
-            price = Number.parseFloat(match[3])
+            priceStr = match[3]
+            if (typeof priceStr === 'string' && priceStr.includes(',')) {
+              priceStr = priceStr.replace(',', '.')
+            }
+            price = Number.parseFloat(priceStr)
           }
         }
         
